@@ -1,0 +1,6 @@
+{
+	"ImportPath": "github.com/tomspeak/quiet-hacker-news",
+	"GoVersion": "go1.9",
+	"GodepVersion": "v79",
+	"Deps": []
+}
