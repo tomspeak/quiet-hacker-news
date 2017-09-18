@@ -8,9 +8,9 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"sort"
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -160,7 +160,17 @@ func (i *Item) fetch(apiURL string, ch chan<- Item) {
 		return
 	}
 
-	i.Host = strings.Trim(u.Hostname(), "www.") // @TODO: Make more robust
+	i.Host = trimSubdomain(u.Hostname())
 
 	ch <- *i
+}
+
+func trimSubdomain(s string) string {
+	re, err := regexp.Compile(`(https?://|w{3}\.)`)
+	if err != nil {
+		log.Println(err)
+		return ""
+	}
+
+	return re.ReplaceAllString(s, "")
 }
