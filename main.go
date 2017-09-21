@@ -11,20 +11,22 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
+	"sync"
 	"time"
 )
 
-// TopStories ...
-type TopStories struct {
-	IDs   []int
-	Items []Item
+// Store ...
+type Store struct {
+	mu    sync.RWMutex
+	ids   []int
+	items []Item
 }
 
 // Item ...
 type Item struct {
 	Index int    `json:"-"`
 	Title string `json:"title"`
-	Type  string `json:"type"`
+	Text  string `json:"text"`
 	URL   string `json:"url"`
 	Host  string `json:"-"`
 }
@@ -33,17 +35,35 @@ const numberOfItemsToDisplay int = 30
 const apiURL string = "https://hacker-news.firebaseio.com/v0/"
 const refreshInterval = (1 * time.Hour)
 
-var topStories TopStories // Stores the in-memory cache of the API response.
+var (
+	env  = os.Getenv("ENV")
+	port = os.Getenv("PORT")
+
+	indexTmpl = template.Must(template.ParseFiles("index.tmpl"))
+	store     = newStore()
+)
 
 func main() {
-	port := os.Getenv("PORT")
 	if port == "" {
 		panic("ERROR: No port set")
 	}
 
-	go getTopStories() // Initialize cache
+	go store.getTopStories() // Initial population of stories
 
-	http.HandleFunc("/", index)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", redirectToHTTPS(index))
+
+	hs := &http.Server{
+		Addr:         ":" + port,
+		Handler:      mux,
+		WriteTimeout: 15 * time.Second,
+		ReadTimeout:  15 * time.Second,
+	}
+
+	err := hs.ListenAndServe()
+	if err != nil {
+		log.Fatal("Listen and Serve: ", err)
+	}
 
 	ticker := time.NewTicker(refreshInterval)
 	quit := make(chan struct{})
@@ -52,7 +72,7 @@ func main() {
 		for {
 			select {
 			case <-ticker.C:
-				getTopStories()
+				store.getTopStories()
 
 			case <-quit:
 				ticker.Stop()
@@ -60,54 +80,70 @@ func main() {
 			}
 		}
 	}()
-
-	log.Fatal(http.ListenAndServe(":"+port, nil))
 }
 
 func index(w http.ResponseWriter, r *http.Request) {
-	t, err := template.ParseFiles("index.tmpl")
-	if err != nil {
-		panic(err)
-	}
-
 	w.Header().Set("Content-Type", "text/html")
-	if err = t.Execute(w, topStories.Items); err != nil {
-		panic(err)
+
+	if err := indexTmpl.Execute(w, store.Items()); err != nil {
+		log.Fatal(err)
 	}
 }
 
-func getTopStories() {
-	topStories.getIDs()
-	topStories.getItems(topStories.IDs[:numberOfItemsToDisplay])
+func redirectToHTTPS(fn func(http.ResponseWriter, *http.Request)) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if env != "dev" { // Avoid doing this in development means we do not have to set up local certificates.
+			if r.Header.Get("X-Forwarded-Proto") != "https" { // Heroku sends this header to identify HTTPS/HTTP
+				target := "https://" + r.Host + r.URL.Path
+
+				http.Redirect(w, r, target, http.StatusMovedPermanently)
+			}
+		}
+
+		fn(w, r)
+	}
 }
 
-func (ts *TopStories) getIDs() TopStories {
+func (s *Store) getTopStories() {
+	s.SetIDs(fetchIDs())
+	s.SetItems(fetchItems(s.IDs()))
+}
+
+func fetchIDs() []int {
 	r, err := http.Get(apiURL + "topstories.json")
 	if err != nil {
 		log.Println("ERROR: Unable to access Hacker News API")
 		log.Println(err)
+		return []int{}
 	}
 	defer r.Body.Close()
 
-	b, err := ioutil.ReadAll(r.Body)
+	var ids []int
+
+	b, err := ioutil.ReadAll(r.Body) // @TODO: Remove ReadAll, too heavy a call
 	if err != nil {
 		log.Println(err)
 	}
 
-	err = json.Unmarshal(b, &ts.IDs)
+	err = json.Unmarshal(b, &ids)
 	if err != nil {
 		log.Println(err)
 	}
 
-	return *ts
+	return ids
 }
 
-func (ts *TopStories) getItems(ids []int) TopStories {
-	var is []Item
+func fetchItems(ids []int) []Item {
+	var is []Item // Temporary storage to switch out with real storage
+	var count int
 
 	ch := make(chan Item, numberOfItemsToDisplay)
 
 	for index, id := range ids {
+		if count == numberOfItemsToDisplay {
+			break
+		}
+
 		var i Item
 		i.Index = index
 
@@ -117,16 +153,20 @@ func (ts *TopStories) getItems(ids []int) TopStories {
 
 		i = <-ch
 
+		if i.Text != "" { // This story is a discussion link
+			continue
+		}
+
 		is = append(is, i)
+
+		count = count + 1
 	}
 
 	sort.Slice(is, func(i, j int) bool {
 		return is[i].Index < is[j].Index
 	})
 
-	ts.Items = is
-
-	return *ts
+	return is
 }
 
 func (i *Item) fetch(apiURL string, ch chan<- Item) {
@@ -142,7 +182,7 @@ func (i *Item) fetch(apiURL string, ch chan<- Item) {
 		return
 	}
 
-	b, err := ioutil.ReadAll(r.Body)
+	b, err := ioutil.ReadAll(r.Body) // @TODO: Remove ReadAll, too heavy a call
 	if err != nil {
 		log.Println(err)
 		return
@@ -163,6 +203,38 @@ func (i *Item) fetch(apiURL string, ch chan<- Item) {
 	i.Host = trimSubdomain(u.Hostname())
 
 	ch <- *i
+}
+
+func newStore() *Store {
+	return &Store{items: []Item{}}
+}
+
+func (s *Store) SetIDs(ids []int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.ids = ids
+}
+
+func (s *Store) IDs() []int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.ids
+}
+
+func (s *Store) SetItems(items []Item) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.items = items
+}
+
+func (s *Store) Items() []Item {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.items
 }
 
 func trimSubdomain(s string) string {
