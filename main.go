@@ -60,11 +60,6 @@ func main() {
 		ReadTimeout:  15 * time.Second,
 	}
 
-	err := hs.ListenAndServe()
-	if err != nil {
-		log.Fatal("Listen and Serve: ", err)
-	}
-
 	ticker := time.NewTicker(refreshInterval)
 	quit := make(chan struct{})
 
@@ -80,6 +75,11 @@ func main() {
 			}
 		}
 	}()
+
+	err := hs.ListenAndServe()
+	if err != nil {
+		log.Fatal("Listen and Serve: ", err)
+	}
 }
 
 func index(w http.ResponseWriter, r *http.Request) {
