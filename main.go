@@ -2,14 +2,14 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"html/template"
 	"log"
 	"net/http"
 	"net/url"
 	"os"
 	"regexp"
-	"sort"
-	"strconv"
 	"sync"
 	"time"
 )
@@ -104,16 +104,15 @@ func redirectToHTTPS(fn func(http.ResponseWriter, *http.Request)) func(http.Resp
 }
 
 func (s *Store) getTopStories() {
-	s.SetIDs(fetchIDs())
-	s.SetItems(fetchItems(s.IDs()))
+	s.fetchIDs()
+	s.fetchItems(s.IDs())
 }
 
-func fetchIDs() []int {
+func (s *Store) fetchIDs() {
 	r, err := http.Get(apiURL + "topstories.json")
 	if err != nil {
 		log.Println("ERROR: Unable to access Hacker News API")
 		log.Println(err)
-		return []int{}
 	}
 	defer r.Body.Close()
 
@@ -126,56 +125,47 @@ func fetchIDs() []int {
 		log.Println(err)
 	}
 
-	return ids
+	s.SetIDs(ids)
 }
 
-func fetchItems(ids []int) []Item {
-	var is []Item // Temporary storage to switch out with real storage
-	var count int
+func (s *Store) fetchItems(ids []int) {
+	var items []Item // Temporary storage to switch out with real storage
+	var numItems int
 
-	ch := make(chan Item, numberOfItemsToDisplay)
+	for _, id := range ids {
+		itemURL := fmt.Sprintf("%sitem/%d.json", apiURL, id)
 
-	for index, id := range ids {
-		if count == numberOfItemsToDisplay {
-			break
-		}
+		item, err := fetchItem(itemURL)
 
-		var i Item
-		i.Index = index
-
-		sid := strconv.Itoa(id)
-
-		go i.fetch(apiURL+"item/"+sid+".json", ch)
-
-		i = <-ch
-
-		if i.Text != "" { // This story is a discussion link
+		if err != nil || item.Text != "" { // We encountered an error, or it's a discussion link
 			continue
 		}
 
-		is = append(is, i)
+		items = append(items, *item)
 
-		count = count + 1
+		numItems++
+
+		if numItems >= numberOfItemsToDisplay {
+			break
+		}
 	}
 
-	sort.Slice(is, func(i, j int) bool {
-		return is[i].Index < is[j].Index
-	})
-
-	return is
+	s.SetItems(items)
 }
 
-func (i *Item) fetch(apiURL string, ch chan<- Item) {
+func fetchItem(apiURL string) (*Item, error) {
+	var i Item
+
 	r, err := http.Get(apiURL)
 	if err != nil {
 		log.Printf("ERROR: Get Request | %v\n", apiURL)
 		log.Println(err)
-		return
+		return nil, err
 	}
 	defer r.Body.Close()
 
 	if r.StatusCode != http.StatusOK {
-		return
+		return nil, errors.New("Did not receive 200 OK from HN API")
 	}
 
 	dec := json.NewDecoder(r.Body)
@@ -183,18 +173,18 @@ func (i *Item) fetch(apiURL string, ch chan<- Item) {
 
 	if err != nil {
 		log.Println(err)
-		return
+		return nil, err
 	}
 
 	u, err := url.Parse(i.URL)
 	if err != nil {
 		log.Println(err)
-		return
+		return nil, err
 	}
 
 	i.Host = trimSubdomain(u.Hostname())
 
-	ch <- *i
+	return &i, nil
 }
 
 func newStore() *Store {
