@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"html/template"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
@@ -120,12 +119,9 @@ func fetchIDs() []int {
 
 	var ids []int
 
-	b, err := ioutil.ReadAll(r.Body) // @TODO: Remove ReadAll, too heavy a call
-	if err != nil {
-		log.Println(err)
-	}
+	dec := json.NewDecoder(r.Body)
+	err = dec.Decode(&ids)
 
-	err = json.Unmarshal(b, &ids)
 	if err != nil {
 		log.Println(err)
 	}
@@ -182,13 +178,9 @@ func (i *Item) fetch(apiURL string, ch chan<- Item) {
 		return
 	}
 
-	b, err := ioutil.ReadAll(r.Body) // @TODO: Remove ReadAll, too heavy a call
-	if err != nil {
-		log.Println(err)
-		return
-	}
+	dec := json.NewDecoder(r.Body)
+	err = dec.Decode(&i)
 
-	err = json.Unmarshal(b, &i)
 	if err != nil {
 		log.Println(err)
 		return
