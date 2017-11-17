@@ -137,7 +137,8 @@ func (s *Store) fetchItems(ids []int) {
 
 		item, err := fetchItem(itemURL)
 
-		if err != nil || item.Text != "" { // We encountered an error, or it's a discussion link
+		// We encountered an error, or it's a discussion link
+		if err != nil || item.URL == "" || item.Text != "" {
 			continue
 		}
 
