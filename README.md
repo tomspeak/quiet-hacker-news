@@ -1,6 +1,6 @@
 # [Quiet Hacker News](http://quiethn.com)
 
-http://speak.sh/posts/quiet-hacker-news
+https://speak.sh/posts/quiet-hacker-news
 
 ---
 
