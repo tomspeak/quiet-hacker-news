@@ -1,0 +1,39 @@
+settings:
+  files:
+    outputs:
+      status: true
+      path: ""
+      name: .r.outputs.log
+    logs:
+      status: true
+      path: ""
+      name: .r.logs.log
+    errors:
+      status: true
+      path: ""
+      name: .r.errors.log
+  legacy:
+    force: false
+schema:
+- name: quiet-hn
+  path: .
+  commands:
+    clean:
+      status: true
+    vet:
+      status: true
+    fmt:
+      status: true
+    run:
+      status: true
+  watcher:
+    extensions:
+    - go
+    - tmpl
+    paths:
+    - /
+    ignored_paths:
+    - .git
+    - .realize
+    - vendor
+    interval: 0s

@@ -50,6 +50,10 @@ func main() {
 	go store.getTopStories() // Initial population of stories
 
 	mux := http.NewServeMux()
+
+	fs := http.FileServer(http.Dir("static"))
+  mux.Handle("/static/", http.StripPrefix("/static/", fs))
+
 	mux.HandleFunc("/", redirectToHTTPS(index))
 
 	hs := &http.Server{
