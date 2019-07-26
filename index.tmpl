@@ -31,18 +31,22 @@
     <meta name="msapplication-square310x310logo" content="/static/favicons/mstile-310x310.png" />
 
     <style>
-      html, body { background: #F0F0F0; }
+      html, body { background: rgb(246, 246, 239); }
       body {
+        font-family: -apple-system, system-ui, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
         width: 700px;
         margin: 44px auto;
       }
       ol {
-        list-style: ;
+        list-style: decimal-leading-zero;
         margin: 0 0 0 18px;
         padding: 0;
       }
       li {
         margin-bottom: 22px;
+      }
+      ol li span {
+        color: #444;
       }
       .links {
         margin-top: 64px;
@@ -53,6 +57,12 @@
       }
       .links a:last-of-type {
         float: right;
+      }
+      a {
+        text-decoration: none;
+      }
+      a:hover {
+        text-decoration: underline;
       }
 
       @media only screen and (max-device-width: 820px) {
